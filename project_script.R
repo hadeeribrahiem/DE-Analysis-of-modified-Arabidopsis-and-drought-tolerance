@@ -6,12 +6,14 @@ library("tidyverse")
 library("readr")
 library("mice")
 library("biomaRt")
+library("ggVennDiagram")
 
 
 #####load files#######
 ## In this project, we will only work on 4 files; two  for the normal plants and two drought stressed plant  
 ## Here we make a list of the selected data set
-working_files <- list.files("~/Desktop/Project/GSE108610_RAW/",full.names = TRUE)
+working_files <- list.files("~/Local/projects/DE-Analysis-of-modified-Arabidopsis-and-drought-tolerance/GSE108610_RAW/",
+                            full.names = TRUE)
 ## Then, we will create a single data frame containing FPKM
 ## The data frame will consist of 8 columns for each sample, and the rows will be gene_id
 ## Creating an empty data frame
@@ -172,33 +174,44 @@ for (each_name in coefficients_names){
 # the genotype effect for stressed condition("genotype_VaWRKY14_vs_WT"+"genotypeVaWRKY14.conditionstressed")
 # and the condition effect for VaWRKY14 genotype("condition_stressed_vs_normal"+"genotypeVaWRKY14.conditionstressed")
 # Extract results for the rest using a loop
-for 
-
-
-
-
-# Making more estimates of the fold change which represent the expression of one sample group relative to another.
-# DESeq2 contrasts
-res <- results(dds, alpha = 0.05)
-# From the results, we will plot mean of the normalized counts VS log2 fold change for all gene tested
-plotMA(res, ylim = c(-8,8))
+for (each_name in coefficients_names){
+  res <- results(dds, list(c(each_name,coefficients[4])))
+  all_res[[paste(each_name, coefficients[4], sep = "_vs_")]] <- res
+}
+# From the results, we will plot mean of the normalized counts VS log2 fold change for all gene tested for each comparison 
 # Genes that are significantly DE colored blue
-# LFC shrinkage(to generate more likely, lower, log2 fold change estimates, similar to what we did with dispersion.) 
-res <- lfcShrink(dds,  contrast = c("condition", "stressed", "normal"), res = res, type = "normal")
-# From the results, we will plot mean of the normalized counts VS log2 fold change for all gene tested
-plotMA(res, ylim = c(-8,8))
+par(mfrow=c(2,2))
+for (each_name in names(all_res)){
+  plotMA(all_res[[each_name]], ylim = c(-8,8), main = each_name)
+}
+########################################## Redo it again################################################## 
+# LFC shrinkage(to generate more likely, lower, log2 fold change estimates, similar to what we did with dispersion) 
+#res <- lfcShrink(dds, res= res, type = "ashr")
+# Create an empty list to store the lfcShrinkage results
+#all_lfc_res <- list()
+# Extract lfcShrinkage results
+#for (each_name in coefficients_names){
+  #res <- results(dds, name = each_name)
+  #all_lfc_res[[each_name]] <- res
+#}
+
+#for (each_name in coefficients_names){
+  #res <- results(dds, list(c(each_name,coefficients[4])))
+  #all_lfc_res[[paste(each_name, coefficients[4],sep = "_vs_")]] <- res
+#}
+# From the lfcShrinkage results, we will plot again mean of the normalized counts VS log2 fold change for all gene tested
+#for (each_name in names(all_lfc_res)){
+  #plotMA(all_lfc_res[[each_name]], ylim = c(-8,8), main = each_name)
+#}
+########################################################################################################### 
 # Get summary of the significant results
-summary(res)
-
-
-
-
-
-
-
+summary(all_res$genotype_VaWRKY14_vs_WT)
+summary(all_res$condition_stressed_vs_normal )
+summary(all_res$genotype_VaWRKY14_vs_WT_vs_genotypeVaWRKY14.conditionstressed )
+summary(all_res$condition_stressed_vs_normal_vs_genotypeVaWRKY14.conditionstressed )
 # Get annotation
 # Here we have not the ensemble gene_IDs, so that we will retrieve them from the biomaRt 
-# ensembl_arabidopsis <- useEnsemblGenomes(biomart = "plants_mart", dataset = "athaliana_eg_gene")
+ensembl_arabidopsis <- useEnsemblGenomes(biomart = "plants_mart", dataset = "athaliana_eg_gene")
 # But how we get the right name of the two arguments; biomart and dataset.
 # We first list all the genomes in the ensembl to know the biomart name which is "plants_mart"
 listEnsemblGenomes()
@@ -214,56 +227,129 @@ gene_annotations <- getBM(attributes = c("ensembl_gene_id","description", "chrom
                           filters = "ensembl_gene_id",
                           values = c(rownames(raw_counts)),
                           mart = ensembl_arabidopsis)
-# Extracting results
-res_all <- data.frame(res) %>%
-  rownames_to_column( var = "ensembl_gene_id") %>%
-  left_join(y = gene_annotations %>% dplyr::select(ensembl_gene_id,description,chromosome_name, uniprot_gn_symbol),
-            by = "ensembl_gene_id")
+
+# Extracting results 
+# Creating an empty list to store every compairsion results as a dataframe
+all_final_res <- list()
+# Creating a for loop to extract results
+for (each_res in names(all_res)){
+  result_data <- data.frame(all_res[[each_res]]) %>%
+    rownames_to_column( var = "ensembl_gene_id") %>%
+    left_join(y = gene_annotations %>% dplyr::select(ensembl_gene_id,description,chromosome_name, uniprot_gn_symbol),
+              by = "ensembl_gene_id") 
+  all_final_res[[each_res]] <- result_data
+}
 # Extracting and arranging significant genes only
-res_sig <- res_all %>%
-  subset(padj < 0.05) %>% 
-  arrange(padj)
-
-
-
+# Creating an empty list to store every compairsion significant results as a dataframe
+all_sig_res <- list()
+for (each_final_res in names(all_final_res)){
+  res_sig <- all_final_res[[each_final_res]] %>%
+    subset(padj < 0.05) %>%
+    arrange(padj)
+  all_sig_res[[each_final_res]] <- res_sig
+}
+# Extracting upregurated and downregulated genes
+# Creating a list for the upregulated genes in each comparison
+up_sig_genes <- list()
+for (each_sig_res in names(all_sig_res)){
+  each_up_sig_genes <- all_sig_res[[each_sig_res]] %>% 
+    subset(log2FoldChange > 0, 
+           select = c("ensembl_gene_id", "log2FoldChange","description", "uniprot_gn_symbol"))
+  up_sig_genes[[each_sig_res]] <- each_up_sig_genes
+}
+# Creating a list for the downregulated genes in each comparison
+down_sig_genes <- list()
+for (each_sig_res in names(all_sig_res)){
+  each_down_sig_genes <- all_sig_res[[each_sig_res]] %>% 
+    subset(log2FoldChange < 0,
+           select = c("ensembl_gene_id", "log2FoldChange","description", "uniprot_gn_symbol")) 
+  down_sig_genes[[each_sig_res]] <- each_down_sig_genes
+}
 ################################################################################
 ################################################################################
 ################################################################################
 #####Data Visualization #######
 ## Expression heatmap 
 # Subsetting normalized counts of significant genes
-sig_normalized_counts <- normalized_raw_counts[ res_sig$ensembl_gene_id,]
+# Creating an empty list to store normalized counts of significant genes for each comparison
+all_sig_normalized_counts <- list()
+# Creating for loop to extract results
+for (each_sig_res in names(all_sig_res)){
+  sig_res <- all_sig_res[[each_sig_res]]
+  sig_normalized_counts <- normalized_raw_counts[sig_res$ensembl_gene_id,]
+  all_sig_normalized_counts[[each_sig_res]] <- sig_normalized_counts
+}
 # Choose a color palette fromRColorBrewer and save it
 heat_colors <- brewer.pal(6, "YlOrRd")
 # Heatmap plotting 
-pheatmap(sig_normalized_counts, color = heat_colors,
-         cluster_rows = T, show_rownames = F,
-         annotation = dplyr::select(metadata_df, condition), 
-         scale = "row")
+par(mfrow=c(2,2))
+# Creating for loop to plot heatmap for each comparison
+for (each_sig_normalized_counts in names(all_sig_normalized_counts)){
+  pheatmap(all_sig_normalized_counts[[each_sig_normalized_counts]], color = heat_colors,
+           cluster_rows = T, show_rownames = F,
+           annotation = dplyr::select(metadata_df, c(condition, genotype)), 
+           scale = "row",
+           main = each_sig_normalized_counts)
+}
 ## Volcano plotting
 # Obtain logical vector regarding whether padj values are less than 0.05 which is return true or false
-res_all <- res_all %>% 
-  mutate(threshold = padj < 0.05) 
-# Volcano plot 
-ggplot (res_all) + geom_point(aes(x = log2FoldChange, y = -log10(padj), color = threshold)) +
-  xlab("Log2 fold change") + 
-  ylab("-Log10 adjusted p-value") + 
-  theme(legend.position = "none" , plot.title = element_text(size = rel(1.5), hjust = 0.5), axis.title = element_text(size = rel(1.25)))
+# Creating an empty list to store results of each comparison
+volcano_plot_res <- list()
+# Creating for loop to extract results
+for (each_res in names(all_final_res)){
+  each_vol_plot_res <- all_final_res[[each_res]] %>% 
+    mutate(threshold = padj < 0.05) 
+  volcano_plot_res[[each_res]] <- each_vol_plot_res
+  }
+
+#Creating for loop to plot volcano for each comparison 
+for(each_vol_plot_res in names(volcano_plot_res)) {
+  print(
+    ggplot (volcano_plot_res[[each_vol_plot_res]]) +
+    geom_point(aes(x = log2FoldChange, y = -log10(padj), color = threshold)) +
+    xlab("Log2 fold change") + 
+    ylab("-Log10 adjusted p-value") + 
+    ggtitle(each_vol_plot_res) +
+    theme(legend.position = "none" , plot.title = element_text(size = rel(1.5), hjust = 0.5), axis.title = element_text(size = rel(1.25)))
+    )
+  }
+
 ## Expression plot 
 # Extracting the top 20 significant genes, then Merge the metadata, so that, we can color the plot by sample group
-top_sig_20 <- data.frame(sig_normalized_counts[1:20, ]) %>%
-  rownames_to_column( var = "ensembl_gene_id") %>%
-  gather(key = "samplename", value = "normalized_count", 2:5) %>%
-  inner_join(rownames_to_column(metadata_df, var = "samplename"), by = "samplename")
-# Expression plotting
-ggplot(top_sig_20) + geom_point(aes(x= ensembl_gene_id, y = normalized_count, color = condition)) + 
-  scale_y_log10() + 
-  xlab("Genes") + 
-  ylab("Normalized Counts") + 
-  ggtitle("Top 20 Significant DE Genes") + 
-  theme_bw() + 
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
-  theme(plot.title = element_text(hjust = 0.5))
+# Creating an empty list to store the results of each comparison
+all_top_sig_10 <- list()
+# Creating for loop to extract results
+for(each_sig_normalized_counts in names(all_sig_normalized_counts)){
+  sig_normalized_counts <- all_sig_normalized_counts[[each_sig_normalized_counts]]
+  top_sig_10 <- data.frame(sig_normalized_counts[1:10, ]) %>%
+    rownames_to_column( var = "ensembl_gene_id") %>%
+    gather(key = "samplename", value = "normalized_count", 2:5) %>%
+    inner_join(rownames_to_column(metadata_df, var = "samplename"), by = "samplename")
+  all_top_sig_10[[each_sig_normalized_counts]] <- top_sig_10
+  }
+# Creating for loop for Expression plotting for each comparison 
+for (each_top_sig_10 in names(all_top_sig_10)){
+  print(
+    ggplot(all_top_sig_10[[each_top_sig_10]]) + 
+      geom_point(aes(x= ensembl_gene_id, y = normalized_count, color = condition)) + 
+    scale_y_log10() + 
+    xlab("Genes") + 
+    ylab("Normalized Counts") + 
+    ggtitle(each_top_sig_10) + 
+    theme_bw() + 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+    theme(plot.title = element_text(hjust = 0.5))
+  )
+  }
+
+## Venn Diagram
+# Plotting venn digram for all the upregulated genes in all the comparison
+ggVennDiagram(lapply(up_sig_genes, function(df) df[["ensembl_gene_id"]]))
+# Plotting venn digram for all the downregulated genes in all the comparison
+ggVennDiagram(lapply(down_sig_genes, function(df) df[["ensembl_gene_id"]]))
+
+
+
 
 
 
