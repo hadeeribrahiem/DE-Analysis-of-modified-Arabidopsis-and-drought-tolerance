@@ -23,9 +23,10 @@ The primary objectives of this project are as follows:
 - [x] **Result Visualization**: Visualize the results using the Expression heatmap, Volcano plot, and Expression plot.
 
 
-- [ ] **Code Transparency**: Provide a transparent and accessible R script for others to review, understand, and reproduce the analysis.
+- [x] **Code Transparency**: Provide a transparent and accessible R script for others to review, understand, and reproduce the analysis.
 
+**Results**
 
+ <img width="1205" alt="Significant DEGs" src="https://github.com/hadeeribrahiem/VaWRKY14-and-Drought-Tolerance-in-Arabidopsis/assets/130606201/08b82d3b-74e9-4c45-bf79-c652ce68911a">
 
- 
 
